@@ -482,11 +482,25 @@ static void update_screen(void)
             }
         }
     }
-    else if (bits_per_pixel == 16)
+    else if(vnc_rotate > 0 && (bits_per_pixel == 16 || bits_per_pixel == 32))
     {
-        uint16_t *f = (uint16_t *)fbmmap; /* -> framebuffer         */
-        uint16_t *c = (uint16_t *)fbbuf;  /* -> compare framebuffer */
-        uint16_t *r = (uint16_t *)vncbuf; /* -> remote framebuffer  */
+        union 
+        {
+            uint16_t * val16b;
+            uint32_t * val32b;
+        } f, c, r;
+
+        if (bits_per_pixel == 16)
+        {
+            f.val16b = (uint16_t *)fbmmap; /* -> framebuffer         */
+            c.val16b = (uint16_t *)fbbuf;  /* -> compare framebuffer */
+            r.val16b = (uint16_t *)vncbuf; /* -> remote framebuffer  */
+        } else if (bits_per_pixel == 32)
+        {
+            f.val32b = (uint32_t *)fbmmap; /* -> framebuffer         */
+            c.val32b = (uint32_t *)fbbuf;  /* -> compare framebuffer */
+            r.val32b = (uint32_t *)vncbuf; /* -> remote framebuffer  */
+        }
 
         switch (vnc_rotate)
         {
@@ -514,13 +528,30 @@ static void update_screen(void)
                 int x;
                 for (x = 0; x < (int)fb_xres; x++)
                 {
-                    uint16_t pixel = *f;
+                    union {
+                        uint16_t val16b;
+                        uint32_t val32b;
+                    } pixel;
 
-                    if (pixel != *c)
+                    if (bits_per_pixel == 16)
+                    {
+                        pixel.val16b = *f.val16b;
+                    } else if (bits_per_pixel == 32)
+                    {
+                        pixel.val32b = *f.val32b;
+                    }
+
+                    if (bits_per_pixel == 16 && pixel.val16b != *c.val16b
+                     || bits_per_pixel == 32 && pixel.val32b != *c.val32b)
                     {
                         int x2, y2;
-
-                        *c = pixel;
+                        if (bits_per_pixel == 16)
+                        {
+                            *c.val16b = pixel.val16b;
+                        } else if (bits_per_pixel == 32)
+                        {
+                            *c.val32b = pixel.val32b;
+                        }
                         switch (vnc_rotate)
                         {
                         case 0:
@@ -547,7 +578,13 @@ static void update_screen(void)
                             exit(EXIT_FAILURE);
                         }
 
-                        r[y2 * server->width + x2] = PIXEL_FB_TO_RFB(pixel, varblock.r_offset, varblock.g_offset, varblock.b_offset);
+                        if (bits_per_pixel == 16)
+                        {
+                            r.val16b[y2 * server->width + x2] = PIXEL_FB_TO_RFB(pixel.val16b, varblock.r_offset, varblock.g_offset, varblock.b_offset);
+                        } else if (bits_per_pixel == 32)
+                        {
+                            r.val32b[y2 * server->width + x2] = PIXEL_FB_TO_RFB(pixel.val32b, varblock.r_offset, varblock.g_offset, varblock.b_offset);
+                        }
 
                         if (x2 < varblock.min_i)
                             varblock.min_i = x2;
@@ -563,8 +600,15 @@ static void update_screen(void)
                         }
                     }
 
-                    f++;
-                    c++;
+                    if (bits_per_pixel == 16)
+                    {
+                        f.val16b++;
+                        c.val16b++;
+                    } else if (bits_per_pixel == 32)
+                    {
+                        f.val32b++;
+                        c.val32b++;
+                    }
                 }
             }
         }
