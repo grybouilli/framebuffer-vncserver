@@ -706,7 +706,16 @@ int main(int argc, char **argv)
     {
         // init touch only if there is a mouse device defined
         int ret = init_mouse(mouse_device, touch_rotate);
-        enable_mouse = (ret > 0);        
+        if(ret == 3)
+        {
+            info_print("Trying to init with relative coordinates... ");
+            ret = init_mouse_rel(fb_xres, fb_yres, mouse_device, touch_rotate);
+            if(!ret)
+            {
+                info_print("Successful\n");
+            }
+        }
+        enable_mouse = (!ret);        
     }
     else
     {

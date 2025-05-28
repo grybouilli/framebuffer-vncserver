@@ -30,6 +30,7 @@ static int ymin, ymax;
 static int rotate;
 static int trkg_id = -1;
 static bool is_wheel_hires = false;
+static bool is_relative_coords = false;
 
 #ifndef input_event_sec
 #define input_event_sec time.tv_sec
@@ -59,13 +60,13 @@ int init_mouse(const char *touch_device, int vnc_rotate)
     if ((mousefd = open(touch_device, O_RDWR)) == -1)
     {
         error_print("cannot open mouse device %s\n", touch_device);
-        return 0;
+        return 1;
     }
 
 	//REL_WHEEL_HI_RES
 	if (ioctl(mousefd, EVIOCGBIT(EV_REL, sizeof(evtype_bitmask)), evtype_bitmask) < 0) {
 		error_print("%s  can't get evdev features: %s",touch_device, strerror(errno));
-		return 0;
+		return 2;
 	}
 
 #ifdef REL_WHEEL_HI_RES
@@ -82,21 +83,36 @@ int init_mouse(const char *touch_device, int vnc_rotate)
     if (ioctl(mousefd, EVIOCGABS(ABS_X), &info))
     {
         error_print("cannot get ABS_X info, %s\n", strerror(errno));
-        return 0;
+        return 3;
     }
     xmin = info.minimum;
     xmax = info.maximum;
     if (ioctl(mousefd, EVIOCGABS(ABS_Y), &info))
     {
         error_print("cannot get ABS_Y, %s\n", strerror(errno));
-        return 0;
+        return 3;
     }
     ymin = info.minimum;
     ymax = info.maximum;
     rotate = vnc_rotate;
 
     info_print("  x:(%d %d)  y:(%d %d) \n", xmin, xmax, ymin, ymax);
-    return 1;
+    return 0;
+}
+
+int init_mouse_rel(int fb_xres, int fb_yres, const char *touch_device, int vnc_rotate)
+{
+    xmin = 0;
+    xmax = fb_xres;
+    ymin = 0;
+    ymax = fb_yres;
+
+    rotate = vnc_rotate;
+
+    is_relative_coords = true;
+    info_print("  x:(%d %d)  y:(%d %d) \n", xmin, xmax, ymin, ymax);
+
+    return 0;
 }
 
 void cleanup_mouse()
@@ -238,9 +254,18 @@ void injectMouseEvent(struct fb_var_screeninfo *scrinfo, int buttonMask, int x, 
         gettimeofday(&time, 0);
         ev.input_event_sec = time.tv_sec;
         ev.input_event_usec = time.tv_usec;
-        ev.type = EV_ABS;
-        ev.code = ABS_X;
-        ev.value = x;
+
+        if(is_relative_coords)
+        {
+            ev.type = EV_REL;
+            ev.code = REL_X;
+            ev.value = dx;
+        } else
+        {
+            ev.type = EV_ABS;
+            ev.code = ABS_X;
+            ev.value = x;
+        }
         if (write(mousefd, &ev, sizeof(ev)) < 0)
         {
             error_print("write event failed, %s\n", strerror(errno));
@@ -254,9 +279,17 @@ void injectMouseEvent(struct fb_var_screeninfo *scrinfo, int buttonMask, int x, 
         gettimeofday(&time, 0);
         ev.input_event_sec = time.tv_sec;
         ev.input_event_usec = time.tv_usec;
-        ev.type = EV_ABS;
-        ev.code = ABS_Y;
-        ev.value = y;
+        if(is_relative_coords)
+        {
+            ev.type = EV_REL;
+            ev.code = REL_Y;
+            ev.value = dy;
+        } else
+        {
+            ev.type = EV_ABS;
+            ev.code = ABS_Y;
+            ev.value = y;
+        }
         if (write(mousefd, &ev, sizeof(ev)) < 0)
         {
             error_print("write event failed, %s\n", strerror(errno));
