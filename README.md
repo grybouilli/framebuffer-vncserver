@@ -22,7 +22,7 @@ with rotation:
 - [ ]  8 bit/pixel
 - [x]  16 bit/pixel
 - [ ]  24 bit/pixel
-- [ ]  32 bit/pixel
+- [x]  32 bit/pixel
 
 The code is based on a LibVNC example for Android:
 https://github.com/LibVNC/libvncserver/blob/master/examples/androidvncserver.c
