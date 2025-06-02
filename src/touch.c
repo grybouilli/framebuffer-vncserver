@@ -109,6 +109,7 @@ void injectTouchEvent(enum MouseAction mouseAction, int x, int y, struct fb_var_
     bool sendTouch;
     int trkIdValue;
     int touchValue;
+    int pressureValue;
     struct timeval time;
 
     switch (mouseAction)
@@ -118,12 +119,14 @@ void injectTouchEvent(enum MouseAction mouseAction, int x, int y, struct fb_var_
         sendTouch = true;
         trkIdValue = ++trkg_id;
         touchValue = 1;
+        pressureValue = 11;
         break;
     case MouseRelease:
         sendPos = false;
         sendTouch = true;
         trkIdValue = -1;
         touchValue = 0;
+        pressureValue = 0;
         break;
     case MouseDrag:
         sendPos = true;
@@ -212,6 +215,17 @@ void injectTouchEvent(enum MouseAction mouseAction, int x, int y, struct fb_var_
         }
     }
 
+    gettimeofday(&time, 0);
+    ev.input_event_sec = time.tv_sec;
+    ev.input_event_usec = time.tv_usec;
+    ev.type = EV_ABS;
+    ev.code = ABS_PRESSURE;
+    ev.value = pressureValue;
+    if (write(touchfd, &ev, sizeof(ev)) < 0)
+    {
+        error_print("write event failed, %s\n", strerror(errno));
+    }
+
     // Finally send the SYN
     gettimeofday(&time, 0);
     ev.input_event_sec = time.tv_sec;
@@ -223,5 +237,5 @@ void injectTouchEvent(enum MouseAction mouseAction, int x, int y, struct fb_var_
     {
         error_print("write event failed, %s\n", strerror(errno));
     }
-    debug_print("injectTouchEvent (screen(%d,%d) -> touch(%d,%d), mouse=%d)\n", xin, yin, x, y, mouseAction);
+    info_print("injectTouchEvent (screen(%d,%d) -> touch(%d,%d), mouse=%d)\n", xin, yin, x, y, mouseAction);
 }
