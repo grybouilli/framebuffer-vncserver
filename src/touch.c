@@ -98,10 +98,10 @@ void injectTouchEvent(enum MouseAction mouseAction, int x, int y, struct fb_var_
     // Calculate the final x and y
     /* Fake touch screen always reports zero */
     //???//if (xmin != 0 && xmax != 0 && ymin != 0 && ymax != 0)
-    {
-        x = xmin + (x * (xmax - xmin)) / (scrinfo->xres);
-        y = ymin + (y * (ymax - ymin)) / (scrinfo->yres);
-    }
+    // {
+    //     x = xmin + (x * (xmax - xmin)) / (scrinfo->xres);
+    //     y = ymin + (y * (ymax - ymin)) / (scrinfo->yres);
+    // }
 
     memset(&ev, 0, sizeof(ev));
 
@@ -213,18 +213,30 @@ void injectTouchEvent(enum MouseAction mouseAction, int x, int y, struct fb_var_
         {
             error_print("write event failed, %s\n", strerror(errno));
         }
+        
+        gettimeofday(&time, 0);
+        ev.input_event_sec = time.tv_sec;
+        ev.input_event_usec = time.tv_usec;
+        ev.type = EV_ABS;
+        ev.code = ABS_PRESSURE;
+        ev.value = pressureValue;
+        if (write(touchfd, &ev, sizeof(ev)) < 0)
+        {
+            error_print("write event failed, %s\n", strerror(errno));
+        }
+    
+        gettimeofday(&time, 0);
+        ev.input_event_sec = time.tv_sec;
+        ev.input_event_usec = time.tv_usec;
+        ev.type = EV_ABS;
+        ev.code = ABS_MT_PRESSURE;
+        ev.value = pressureValue;
+        if (write(touchfd, &ev, sizeof(ev)) < 0)
+        {
+            error_print("write event failed, %s\n", strerror(errno));
+        }
     }
 
-    gettimeofday(&time, 0);
-    ev.input_event_sec = time.tv_sec;
-    ev.input_event_usec = time.tv_usec;
-    ev.type = EV_ABS;
-    ev.code = ABS_PRESSURE;
-    ev.value = pressureValue;
-    if (write(touchfd, &ev, sizeof(ev)) < 0)
-    {
-        error_print("write event failed, %s\n", strerror(errno));
-    }
 
     // Finally send the SYN
     gettimeofday(&time, 0);
