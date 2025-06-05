@@ -55,6 +55,7 @@ Using qmake:
 	-p port: VNC port, default is 5900
 	-a authentication: path to password file generated with 'storepasswd'
 	-A authentication: plain text password
+	-c cursor: shared memory name for cursor data
 	-f device: framebuffer device node, default is /dev/fb0
 	-k device: keyboard device node (example: /dev/input/event0)
 	-t device: touchscreen device node (example:/dev/input/event2)
@@ -64,6 +65,78 @@ Using qmake:
 	-F FPS: Maximum target FPS, default is 10
 	-v: verbose
 	-h: print this help
+
+### Handling the mouse cursor
+
+In case the app you're running on your server isn't relying on an X server (that is, it manipulates the framebuffer directly), you will encounter the absolute mouse coordinates problem. More specifically, if it is impossible for you to retrieve the mouse absolute  coordinates with `EV_ABS` and `ABS_X`/`ABS_Y`, you will have to do the following:
+
+* Write your own mouse driver to keep track of the cursor's absolute coordinates
+* Make the driver write the mouse coordinates in a shared memory of chosen name (e.g `/cursor_pos`) using this struct:
+```cpp
+typedef struct {
+    int x;
+    int y;
+} CursorPosition;
+```
+* Use the flag `-c` when starting the vnc server.
+
+Here is a practical example using [lvgl](https://github.com/lvgl/lvgl) to manipulate the framebuffer:
+
+```cpp
+// -------------------------
+// Driver's code
+
+CursorPosition *cursor_shared_mem = NULL;
+
+// Initialize shared memory
+int init_shared_cursor_mem() {
+
+    int fd = shm_open("/cursor_pos", O_CREAT | O_RDWR, 0666);
+
+    if(fd < 0)
+    {
+        fprintf(stderr, "%s(): error while opening shared memory : %s", __FUNCTION__, strerror(errno));
+    } 
+    else
+    {
+        ftruncate(fd, sizeof(CursorPosition));
+        cursor_shared_mem = (CursorPosition*) mmap(0, sizeof(CursorPosition), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    }
+    return fd;
+}
+
+// Custom driver
+static void mouse_custom_driver(lv_indev_t * indev, lv_indev_data_t * data)
+{
+	// ... some custom computation ...
+
+	// Writing the cursor position in the shared memory :
+	if (cursor_shared_mem) {
+        cursor_shared_mem->x = data->point.x;
+        cursor_shared_mem->y = data->point.y;
+    }
+}
+
+int main()
+{
+	// .. some init code ...
+	init_shared_cursor_mem();
+	lv_indev_t *touch = lv_indev_create();
+    if(touch != nullptr){
+        lv_indev_set_type(touch, LV_INDEV_TYPE_POINTER);
+        lv_indev_set_read_cb(touch, mouse_custom_driver); // attaching custom driver as read callback
+        lv_indev_set_display(touch, disp);
+	}
+
+	// ...
+	return 0;
+}
+```
+
+Invoking the vnc server:
+```bash
+framebuffer-vncserver -c /cursor_pos -m /dev/input/event0 ...
+```
 
 ## Run on startup as service
 

@@ -54,6 +54,7 @@ static char fb_device[256] = "/dev/fb0";
 static char touch_device[256] = "";
 static char kbd_device[256] = "";
 static char mouse_device[256] = "";
+static char cursor_pos[256] = "";
 
 static struct fb_var_screeninfo var_scrinfo;
 static struct fb_fix_screeninfo fix_scrinfo;
@@ -72,6 +73,15 @@ static unsigned int bits_per_pixel;
 static unsigned int frame_size;
 static unsigned int fb_xres;
 static unsigned int fb_yres;
+
+static int shared_cursor_data_fd;
+typedef struct {
+    int x;
+    int y;
+} CursorPosition;
+
+CursorPosition *cursor_shared_mem = NULL;
+
 int verbose = 0;
 /* Can be either a path to a password file or a plain text password. */
 static char *authData = NULL;
@@ -275,8 +285,19 @@ rfbBool rfbCheckPasswordByList(rfbClientPtr cl, const char* response, int len)
     return(FALSE);
 }
 
-/*****************************************************************************/
+enum rfbNewClientAction onClientHook(struct _rfbClientRec* cl)
+{
+    if(strlen(mouse_device)>0)
+    {
+        if(cursor_shared_mem)
+        {
+            init_mouse_pos(cursor_shared_mem->x, cursor_shared_mem->y);
+        }
+        injectMouseEvent(&var_scrinfo, 0, cl->cursorX, cl->cursorY);
+    }
+}
 
+/*****************************************************************************/
 static void init_fb_server(int argc, char **argv, rfbBool enable_touch, rfbBool enable_mouse)
 {
     info_print("Initializing server...\n");
@@ -305,6 +326,7 @@ static void init_fb_server(int argc, char **argv, rfbBool enable_touch, rfbBool 
     server->port = vnc_port;
     server->passwordCheck = authByFile ? rfbDefaultPasswordCheck : rfbCheckPasswordByList;
     server->authPasswdData = (void *)authData;
+    server->newClientHook = onClientHook;
 
     server->kbdAddEvent = keyevent;
     if (enable_touch)
@@ -691,6 +713,18 @@ static void update_screen(void)
     }
 }
 
+int init_cursor_reader() {
+    int fd = shm_open(cursor_pos, O_RDONLY, 0666);
+    if (fd < 0) { 
+        error_print("Error when trying to open %s: %s\n", cursor_pos, strerror(errno)); 
+        exit(1); 
+    }
+
+    cursor_shared_mem = (CursorPosition*) mmap(0, sizeof(CursorPosition), PROT_READ, MAP_SHARED, fd, 0);
+    // close(fd);
+    return fd;
+}
+
 /*****************************************************************************/
 
 void print_usage(char **argv)
@@ -699,6 +733,7 @@ void print_usage(char **argv)
                "-p port: VNC port, default is 5900\n"
                "-a authentication: path to password file generated with 'storepasswd'\n"
                "-A authentication: plain text password\n"
+               "-c cursor: shared memory name for cursor data\n"
                "-f device: framebuffer device node, default is /dev/fb0\n"
                "-k device: keyboard device node (example: /dev/input/event0)\n"
                "-t device: touchscreen device node (example:/dev/input/event2)\n"
@@ -766,6 +801,15 @@ int main(int argc, char **argv)
                     }
                     break;
                 }
+                case 'c':
+                    i++;
+                    if (argv[i])
+                    {
+                        info_print("Shared cursor data : %s\n", argv[i]);
+                        strcpy(cursor_pos, argv[i]);
+                        shared_cursor_data_fd = init_cursor_reader();
+                    }
+                    break;
                 case 'r':
                     i++;
                     if (argv[i])
@@ -832,6 +876,7 @@ int main(int argc, char **argv)
                 info_print("Successful\n");
             }
         }
+
         enable_mouse = (!ret);        
     }
     else

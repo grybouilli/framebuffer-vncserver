@@ -23,14 +23,10 @@
 #include "logging.h"
 
 
-static int mousefd = -1;
-
-static int xmin, xmax;
-static int ymin, ymax;
-static int rotate;
-static int trkg_id = -1;
-static bool is_wheel_hires = false;
-static bool is_relative_coords = false;
+#define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
+#define MAP(x) { #x,x }
+#define WHEEL_UP 3
+#define WHEEL_DOWN 4
 
 #ifndef input_event_sec
 #define input_event_sec time.tv_sec
@@ -43,10 +39,26 @@ typedef struct
     const int value;
 } map_t;
 
-#define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
-#define MAP(x) { #x,x }
-#define WHEEL_UP 3
-#define WHEEL_DOWN 4
+static int mousefd = -1;
+
+static int xmin, xmax;
+static int ymin, ymax;
+static int rotate;
+static int trkg_id = -1;
+static bool is_wheel_hires = false;
+static bool is_relative_coords = false;
+static const map_t mouseButtonMap[] = {
+    MAP(BTN_LEFT),
+    MAP(BTN_MIDDLE),
+    MAP(BTN_RIGHT),
+};
+static const int buttonsNumber = sizeof(mouseButtonMap) / sizeof(mouseButtonMap[0]);
+static int last_buttonMask;
+
+// last_x and last_y should be initialized with the cursor coordinates at the moment of the server start-up.
+static int last_x = 0;
+static int last_y = 0;
+static int wheel_tick;
 
 int init_mouse(const char *touch_device, int vnc_rotate)
 {
@@ -115,6 +127,12 @@ int init_mouse_rel(int fb_xres, int fb_yres, const char *touch_device, int vnc_r
     return 0;
 }
 
+int init_mouse_pos(int first_x, int first_y)
+{
+    last_x = first_x;
+    last_y = first_y;
+}
+
 void cleanup_mouse()
 {
     if (mousefd != -1)
@@ -133,17 +151,6 @@ void injectMouseEvent(struct fb_var_screeninfo *scrinfo, int buttonMask, int x, 
     by a press and release of button 4, and each step downwards is represented by
     a press and release of button 5.
       From: http://www.vislab.usyd.edu.au/blogs/index.php/2009/05/22/an-headerless-indexed-protocol-for-input-1?blog=61 */
-    
-    static map_t mouseButtonMap[] = {
-        MAP(BTN_LEFT),
-        MAP(BTN_MIDDLE),
-        MAP(BTN_RIGHT),
-    };
-    static int buttonsNumber = sizeof(mouseButtonMap) / sizeof(mouseButtonMap[0]);
-    static int last_buttonMask;
-    static int last_x;
-    static int last_y;
-    static int wheel_tick;
 	int last_wheel_tick = 0;
     
     
